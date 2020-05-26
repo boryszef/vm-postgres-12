@@ -1,0 +1,5 @@
+venv
+postgres.pass
+ssh_key
+ssh_key.pub
+.vagrant

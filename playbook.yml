@@ -1,0 +1,79 @@
+---
+- hosts: all
+
+  vars:
+    pg_dir: /var/lib/pgsql
+    data_dir: "{{ pg_dir }}/12/data"
+
+  tasks:
+
+  - name: Install GnuPG program
+    apt:
+      name: gnupg
+
+  - name: install Postgres' PGP key
+    apt_key:
+      url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
+  - name: Add Postgresql repository
+    apt_repository:
+      repo: deb https://apt.postgresql.org/pub/repos/apt/ buster-pgdg main
+
+  - name: Install Postgresql
+    apt:
+      name: postgresql-12
+
+  - name: Install Postgres client
+    apt:
+      name: postgresql-client-12
+
+  - name: Make sure that service has not been started automatically
+    service:
+      name: postgresql
+      enabled: no
+      state: stopped
+
+  - name: Check if Postgresql is running in data_dir
+    stat:
+      path: "{{ data_dir }}/postmaster.pid"
+    register: pm_pid
+
+  - name: Stop Postgresql service if running in data_dir
+    become_user: postgres
+    command:
+      cmd: /usr/lib/postgresql/12/bin/pg_ctl stop -D {{ data_dir }}
+    when: pm_pid.stat.exists
+
+  - name: Fix ownership of the directory
+    file:
+      path: "{{ pg_dir }}"
+      owner: postgres
+      group: postgres
+      state: directory
+      mode: '0755'
+
+  - name: Clear previous data directory
+    file:
+      path: "{{ data_dir }}"
+      state: absent
+
+  - name: Copy password file
+    copy:
+      src: postgres.pass
+      dest: /tmp/postgres.pass
+
+  - name: Initialize Postgresql directory
+    become_user: postgres
+    command: /usr/lib/postgresql/12/bin/initdb -U postgres --pwfile=/tmp/postgres.pass {{ data_dir }}
+    args:
+      stdin: postgres
+
+  - name: Copy permission file
+    copy:
+      src: pg_hba.conf
+      dest: "{{ data_dir }}/pg_hba.conf"
+
+  - name: Start Postgresql service
+    become_user: postgres
+    command:
+      cmd: /usr/lib/postgresql/12/bin/pg_ctl start -D {{ data_dir }} -o "-D {{ data_dir }}"
